@@ -1,5 +1,6 @@
 package org.json;
 
+
 /*
  Copyright (c) 2002 JSON.org
 
@@ -1616,22 +1617,59 @@ public class JSONObject {
         char initial = string.charAt(0);
         if ((initial >= '0' && initial <= '9') || initial == '-') {
             try {
-                if (string.indexOf('.') > -1 || string.indexOf('e') > -1
+            	if (string.indexOf('.') > -1 || string.indexOf('e') > -1
                         || string.indexOf('E') > -1
                         || "-0".equals(string)) {
-                    Double d = Double.valueOf(string);
-                    if (!d.isInfinite() && !d.isNaN()) {
-                        return d;
-                    }
-                } else {
-                    Long myLong = new Long(string);
-                    if (string.equals(myLong.toString())) {
-                        if (myLong.longValue() == myLong.intValue()) {
-                            return Integer.valueOf(myLong.intValue());
-                        }
-                        return myLong;
-                    }
-                }
+            		// Use a BigDecimal all the time so we keep the original
+            		// representation. BigDecimal doesn't support -0.0, ensure we
+            		// keep that by forcing a decimal.
+            		try {
+            			BigDecimal bd = new BigDecimal(string);
+            			if(initial == '-' && BigDecimal.ZERO.compareTo(bd)==0) {
+            				return Double.valueOf(-0.0);
+            			}
+            			return bd;
+            		} catch (NumberFormatException retryAsDouble) {
+            			// this is to support "Hex Floats" like this: 0x1.0P-1074
+            			try {
+            				Double d = Double.valueOf(string);
+            				if(d.isNaN() || d.isInfinite()) {
+            					throw new NumberFormatException("val ["+string+"] is not a valid number.");
+            				}
+            				return d;
+            			} catch (NumberFormatException ignore) {
+            				throw new NumberFormatException("val ["+string+"] is not a valid number.");
+            			}
+            		}
+            	}
+            	// block items like 00 01 etc. Java number parsers treat these as Octal.
+            	if(initial == '0' && string.length() > 1) {
+            		char at1 = string.charAt(1);
+            		if(at1 >= '0' && at1 <= '9') {
+            			throw new NumberFormatException("val ["+string+"] is not a valid number.");
+            		}
+            	} else if (initial == '-' && string.length() > 2) {
+            		char at1 = string.charAt(1);
+            		char at2 = string.charAt(2);
+            		if(at1 == '0' && at2 >= '0' && at2 <= '9') {
+            			throw new NumberFormatException("val ["+string+"] is not a valid number.");
+            		}
+            	}
+            	// integer representation.
+            	// This will narrow any values to the smallest reasonable Object representation
+            	// (Integer, Long, or BigInteger)
+            	// BigInteger down conversion: We use a similar bitLenth compare as
+            	// BigInteger#intValueExact uses. Increases GC, but objects hold
+            	// only what they need. i.e. Less runtime overhead if the value is
+            	// long lived.
+            	BigInteger bi = new BigInteger(string);
+            	if(bi.bitLength() <= 31){
+            		return Integer.valueOf(bi.intValue());
+            	}
+            	if(bi.bitLength() <= 63){
+            		return Long.valueOf(bi.longValue());
+            	}
+            	return bi;
             } catch (Exception ignore) {
             }
         }
